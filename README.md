@@ -2,6 +2,9 @@
 
 An interactive WebGL-based camera effect that splits the view into quadrants and applies various shader effects. This project combines real-time video processing with customizable visual effects.
 
+<img width="920" alt="image" src="https://github.com/user-attachments/assets/3f615334-62a7-4d1b-90b1-6483cc8ac45a" />
+
+
 ## Features
 
 - **Quadrant-Based Processing**: Splits the view into four distinct quadrants
