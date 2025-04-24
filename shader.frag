@@ -89,10 +89,10 @@ float getQuadrantExpansion(int quadrant) {
 
 // Function to get quadrant origin point and expansion direction
 vec2 getQuadrantOrigin(int quadrant, float expansion) {
-    if (quadrant == 0) return vec2(0.0, 0.0);                    // Bottom Left - fixed at bottom left
-    if (quadrant == 1) return vec2(1.0 - expansion, 0.0);       // Bottom Right - moves left
-    if (quadrant == 2) return vec2(0.0, 1.0 - expansion);       // Top Left - moves down
-    return vec2(1.0 - expansion, 1.0 - expansion);              // Top Right - moves down and left
+    if (quadrant == 0) return vec2(0.0, 0.0);                    // Bottom Left - fixed at bottom left (blue dot)
+    if (quadrant == 1) return vec2(1.0 - expansion, 0.0);       // Bottom Right - expands left from yellow dot
+    if (quadrant == 2) return vec2(0.0, 1.0);                   // Top Left - fixed at top left (red dot)
+    return vec2(1.0 - expansion, 1.0);                          // Top Right - fixed at top right (green dot)
 }
 
 // Function for *QUADRANT-SPECIFIC* effects ONLY
@@ -115,7 +115,6 @@ vec4 applyQuadrantSpecificEffects(vec4 inputColor, vec2 quadUv, int quadrant) {
 }
 
 void main() {
-    // Get normalized coordinates in [0,2] range
     vec2 rawUv = gl_FragCoord.xy / u_resolution.xy;
     
     if (!u_expansionEnabled) {
@@ -159,7 +158,6 @@ void main() {
         return;
     }
 
-    // Initialize blend state
     BlendState blendState;
     blendState.color = vec4(0.0);
     blendState.totalWeight = 0.0;
@@ -169,16 +167,9 @@ void main() {
     for(int q = 0; q < 4; q++) {
         float expansion = getQuadrantExpansion(q);
         vec2 origin = getQuadrantOrigin(q, expansion);
+        float quadSize = 1.0 + expansion;
         
-        // Calculate the size of the expanded quadrant
-        float quadSize = 1.0 + expansion * 2.0;
-        
-        // Calculate the center based on quadrant and expansion
-        vec2 quadCenter;
-        if (q == 0) quadCenter = origin + vec2(quadSize * 0.5);           // Bottom Left
-        else if (q == 1) quadCenter = origin + vec2(quadSize * 0.5);      // Bottom Right
-        else if (q == 2) quadCenter = origin + vec2(quadSize * 0.5);      // Top Left
-        else quadCenter = origin + vec2(quadSize * 0.5);                   // Top Right
+        vec2 quadCenter = origin + vec2(quadSize * 0.5);
         
         vec2 relativePos = (rawUv - quadCenter) / quadSize;
         vec2 quadUv = relativePos + vec2(0.5, 0.5);
@@ -222,14 +213,11 @@ void main() {
             }
 
             vec4 quadrantColor = applyQuadrantSpecificEffects(effectColor, quadUv, q);
-            
-            // Process blend using the new system
             blendState = processBlend(blendState, quadrantColor, weight);
         }
     }
 
-    // Final color depends on blend mode
-    if (u_blendMode == 2) { // Additive needs normalization
+    if (u_blendMode == 2) {
         gl_FragColor = blendState.color / max(blendState.totalWeight, 1.0);
     } else {
         gl_FragColor = blendState.color;
