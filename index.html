@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>GLSL Shader Viewer</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; color: #eee; background-color: #333; }
+    .container { position: relative; display: flex; justify-content: center; align-items: center; min-height: 100vh; flex-direction: column; }
+    canvas { border: 1px solid #555; max-width: 90vw; max-height: 80vh; }
+    .controls { margin-top: 15px; width: 80%; max-width: 600px; text-align: center; }
+    button { margin: 0 5px; padding: 8px 15px; cursor: pointer; }
+    .control-group { margin-bottom: 15px; border: 1px solid #555; padding: 10px; border-radius: 5px; }
+    .control-group h4 { margin-top: 0; margin-bottom: 10px; text-align: left; }
+    .slider-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+    .slider-container label { flex-basis: 150px; text-align: right; margin-right: 10px; font-size: 0.9em; }
+    .slider-container input[type=range] { flex-grow: 1; }
+    .slider-container span { min-width: 40px; text-align: left; font-size: 0.9em; font-family: monospace; }
+  </style>
+</head>
+<body>
+<div class="container"> 
+  <div id="fpsCounter" style="position: fixed; top: 10px; left: 10px; color: limegreen; background: rgba(0,0,0,0.6); padding: 5px; font-size: 14px; z-index: 100;">FPS: --</div>
+  <canvas id="glCanvas"></canvas> 
+  <div class="controls">
+    <div style="margin-bottom: 10px;">
+        <label for="cameraSelect" style="margin-right: 5px;">Camera:</label>
+        <select id="cameraSelect"></select>
+        <button id="toggleCamera" style="margin-left: 10px;">Disable Camera</button>
+    </div>
+    
+    <!-- Add audio controls -->
+    <div class="control-group">
+        <h4>Audio Input</h4>
+        <div style="margin-bottom: 10px;">
+            <label for="micSelect" style="margin-right: 5px;">Microphone:</label>
+            <select id="micSelect" style="margin-right: 10px;"></select>
+            <button id="toggleMic">Enable Microphone</button>
+        </div>
+        <div class="slider-container">
+            <label>Audio Level:</label>
+            <div id="audioLevel" style="width: 200px; height: 20px; background: #444; margin: 5px;">
+                <div id="audioLevelBar" style="width: 0%; height: 100%; background: #0f0; transition: width 0.1s;"></div>
+            </div>
+        </div>
+    </div>
+
+    <button id="toggleWave">Toggle Wave</button>
+    <button id="toggleGlitch">Toggle Glitch</button>
+    <button id="toggleZoom">Toggle Zoom</button>
+    <button id="toggleExpansion">Toggle Expansion</button>
+    <p>Press buttons to enable/disable visual effects.</p>
+
+    <!-- Sliders -->
+    <div class="control-group">
+      <h4>Wave Effect</h4>
+      <div class="slider-container">
+        <label for="waveAmp">Amplitude:</label>
+        <input type="range" id="waveAmp" name="waveAmp" min="0" max="0.1" step="0.001" value="0.01">
+        <span id="waveAmpVal">0.01</span>
+      </div>
+      <div class="slider-container">
+        <label for="waveFreq">Frequency:</label>
+        <input type="range" id="waveFreq" name="waveFreq" min="0" max="50" step="0.1" value="3.0">
+        <span id="waveFreqVal">3.0</span>
+      </div>
+      <div class="slider-container">
+        <label for="waveSpeed">Speed:</label>
+        <input type="range" id="waveSpeed" name="waveSpeed" min="0" max="10" step="0.1" value="3.0">
+        <span id="waveSpeedVal">3.0</span>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <h4>Glitch Effect</h4>
+      <div class="slider-container">
+        <label for="glitchStr">Strength:</label>
+        <input type="range" id="glitchStr" name="glitchStr" min="0" max="0.1" step="0.001" value="0.01">
+        <span id="glitchStrVal">0.01</span>
+      </div>
+      <div class="slider-container">
+        <label for="glitchSpeed">Speed:</label>
+        <input type="range" id="glitchSpeed" name="glitchSpeed" min="0" max="50" step="0.1" value="10.0">
+        <span id="glitchSpeedVal">10.0</span>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <h4>Zoom Effect</h4>
+      <div class="slider-container">
+        <label for="zoomFreq">Beat Frequency:</label>
+        <input type="range" id="zoomFreq" name="zoomFreq" min="0" max="10" step="0.1" value="4.0">
+        <span id="zoomFreqVal">4.0</span>
+      </div>
+      <div class="slider-container">
+        <label for="zoomSharp">Beat Sharpness:</label>
+        <input type="range" id="zoomSharp" name="zoomSharp" min="1" max="20" step="0.1" value="4.0">
+        <span id="zoomSharpVal">4.0</span>
+      </div>
+      <div class="slider-container">
+        <label for="zoomAmp">Beat Amplitude:</label>
+        <input type="range" id="zoomAmp" name="zoomAmp" min="0" max="0.5" step="0.01" value="0.08">
+        <span id="zoomAmpVal">0.08</span>
+      </div>
+    </div>
+
+    <div class="control-group">
+        <label for="blendMode">Blend Mode:</label>
+        <select id="blendMode">
+            <option value="0">Weighted Average</option>
+            <option value="1">Maximum</option>
+            <option value="2">Additive</option>
+            <option value="3">Multiply</option>
+        </select>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.skypack.dev/three@0.150.1';
+
+async function init() {
+  const canvas = document.getElementById('glCanvas');
+  const fpsCounterElement = document.getElementById('fpsCounter');
+  const container = document.querySelector('.container');
+  const cameraSelect = document.getElementById('cameraSelect');
+  let scene = new THREE.Scene();
+  let camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  let renderer = new THREE.WebGLRenderer({ canvas: canvas });
+  let material;
+  let skyTexture;
+  let isCameraEnabled = true;
+  let uniforms = {
+    u_time: { value: 0.0 },
+    u_resolution: { value: new THREE.Vector2(1, 1) },
+    u_texture: { value: null },
+    u_waveEnabled: { value: true },
+    u_glitchEnabled: { value: true },
+    u_zoomEnabled: { value: true },
+    u_expansionEnabled: { value: false },
+    u_waveAmplitude: { value: 0.01 },
+    u_waveFrequency: { value: 3.0 },
+    u_waveSpeed: { value: 3.0 },
+    u_glitchStrength: { value: 0.01 },
+    u_glitchSpeed: { value: 10.0 },
+    u_zoomBeatFrequency: { value: 4.0 },
+    u_zoomBeatSharpness: { value: 4.0 },
+    u_zoomBeatAmplitude: { value: 0.08 },
+    u_blendMode: { value: 0 },
+    u_audioLevel: { value: 0.0 },
+  };
+
+  const toggleWaveButton = document.getElementById('toggleWave');
+  const toggleGlitchButton = document.getElementById('toggleGlitch');
+  const toggleZoomButton = document.getElementById('toggleZoom');
+  const toggleExpansionButton = document.getElementById('toggleExpansion');
+  const toggleCameraButton = document.getElementById('toggleCamera');
+
+  toggleWaveButton.addEventListener('click', () => {
+    uniforms.u_waveEnabled.value = !uniforms.u_waveEnabled.value;
+  });
+
+  toggleGlitchButton.addEventListener('click', () => {
+    uniforms.u_glitchEnabled.value = !uniforms.u_glitchEnabled.value;
+  });
+
+  toggleZoomButton.addEventListener('click', () => {
+    uniforms.u_zoomEnabled.value = !uniforms.u_zoomEnabled.value;
+  });
+
+  toggleExpansionButton.addEventListener('click', () => {
+    uniforms.u_expansionEnabled.value = !uniforms.u_expansionEnabled.value;
+    console.log('Expansion toggled:', uniforms.u_expansionEnabled.value);
+  });
+
+  toggleCameraButton.addEventListener('click', () => {
+    isCameraEnabled = !isCameraEnabled;
+    toggleCameraButton.textContent = isCameraEnabled ? 'Disable Camera' : 'Enable Camera';
+    
+    if (!isCameraEnabled) {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
+      if (!skyTexture) {
+        const textureLoader = new THREE.TextureLoader();
+        skyTexture = textureLoader.load('sky.jpg', (texture) => {
+          uniforms.u_texture.value = texture;
+          const imgWidth = texture.image.width;
+          const imgHeight = texture.image.height;
+          const displayWidth = imgWidth * 2;
+          const displayHeight = imgHeight * 2;
+          renderer.setSize(displayWidth, displayHeight);
+          canvas.style.aspectRatio = `${displayWidth} / ${displayHeight}`;
+          uniforms.u_resolution.value.set(imgWidth, imgHeight);
+        });
+      } else {
+        uniforms.u_texture.value = skyTexture;
+      }
+    } else {
+      startStream(cameraSelect.value);
+    }
+  });
+
+  function setupSlider(sliderId, valueDisplayId, uniformName) {
+    const slider = document.getElementById(sliderId);
+    const valueDisplay = document.getElementById(valueDisplayId);
+    valueDisplay.textContent = parseFloat(slider.value).toFixed(slider.step.includes('.') ? slider.step.split('.')[1].length : 0);
+    slider.addEventListener('input', (event) => {
+        const value = parseFloat(event.target.value);
+        uniforms[uniformName].value = value;
+        valueDisplay.textContent = value.toFixed(slider.step.includes('.') ? slider.step.split('.')[1].length : 0);
+    });
+  }
+
+  setupSlider('waveAmp', 'waveAmpVal', 'u_waveAmplitude');
+  setupSlider('waveFreq', 'waveFreqVal', 'u_waveFrequency');
+  setupSlider('waveSpeed', 'waveSpeedVal', 'u_waveSpeed');
+  setupSlider('glitchStr', 'glitchStrVal', 'u_glitchStrength');
+  setupSlider('glitchSpeed', 'glitchSpeedVal', 'u_glitchSpeed');
+  setupSlider('zoomFreq', 'zoomFreqVal', 'u_zoomBeatFrequency');
+  setupSlider('zoomSharp', 'zoomSharpVal', 'u_zoomBeatSharpness');
+  setupSlider('zoomAmp', 'zoomAmpVal', 'u_zoomBeatAmplitude');
+
+  let lastFrameTime = 0;
+  let frameCount = 0;
+  let fpsUpdateInterval = 1000;
+  let lastFpsUpdateTime = 0;
+
+  const video = document.createElement('video');
+  video.playsInline = true;
+  video.muted = true;
+  let currentStream = null;
+
+  // Add shader hot reloading functions
+  async function reloadShader() {
+    try {
+      // Add timestamp to prevent caching
+      const fragmentShader = await fetch('shader.frag?' + Date.now()).then(res => res.text());
+      if (material) {
+        material.fragmentShader = fragmentShader;
+        material.needsUpdate = true;
+      }
+      console.log('Shader reloaded successfully');
+    } catch (err) {
+      console.error('Error reloading shader:', err);
+    }
+  }
+
+  async function watchShader() {
+    let lastModified = null;
+    
+    setInterval(async () => {
+      try {
+        const response = await fetch('shader.frag', { method: 'HEAD' });
+        const currentModified = response.headers.get('last-modified');
+        
+        if (lastModified && currentModified !== lastModified) {
+          console.log('Shader file changed, reloading...');
+          reloadShader();
+        }
+        
+        lastModified = currentModified;
+      } catch (err) {
+        console.error('Error checking shader file:', err);
+      }
+    }, 1000); // Check every second
+  }
+
+  // Initial shader load
+  const fragmentShader = await fetch('shader.frag').then(res => res.text());
+  
+  // Start watching for shader changes
+  watchShader();
+
+  async function startStream(deviceId = null) {
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => track.stop());
+    }
+
+    const constraints = {
+      video: { deviceId: deviceId ? { exact: deviceId } : undefined },
+      audio: false
+    };
+
+    try {
+      currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = currentStream;
+      video.play();
+
+      if (!uniforms.u_texture.value || !(uniforms.u_texture.value instanceof THREE.VideoTexture)) {
+          uniforms.u_texture.value = new THREE.VideoTexture(video);
+      } else {
+          uniforms.u_texture.value.needsUpdate = true;
+      }
+      
+      video.onloadedmetadata = () => {
+        const videoWidth = video.videoWidth;
+        const videoHeight = video.videoHeight;
+
+        console.log(`Video dimensions: ${videoWidth}x${videoHeight}`);
+
+        const displayWidth = videoWidth * 2;
+        const displayHeight = videoHeight * 2;
+
+        renderer.setSize(displayWidth, displayHeight);
+        canvas.style.aspectRatio = `${displayWidth} / ${displayHeight}`;
+
+        uniforms.u_resolution.value.set(videoWidth, videoHeight);
+
+        if (!material) {
+          material = new THREE.ShaderMaterial({
+            uniforms,
+            fragmentShader
+          });
+          const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+          scene.add(quad);
+          
+          lastFrameTime = performance.now();
+          lastFpsUpdateTime = lastFrameTime;
+          animate(lastFrameTime);
+        }
+      };
+
+    } catch (err) {
+      console.error("Error accessing camera: ", err);
+      container.innerHTML = `Error accessing camera: ${err.message}. Please ensure you have a camera connected and grant permission.`;
+      return;
+    }
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+    if (videoDevices.length === 0) {
+        throw new Error("No video input devices found.");
+    }
+
+    videoDevices.forEach((device, index) => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.text = device.label || `Camera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
+
+    cameraSelect.addEventListener('change', (event) => {
+      startStream(event.target.value);
+    });
+
+    await startStream(videoDevices[0].deviceId);
+
+  } catch (err) {
+    console.error("Error setting up camera selection: ", err);
+    container.innerHTML = `Error setting up camera: ${err.message}.`;
+    return;
+  }
+
+  let audioContext;
+  let audioSource;
+  let audioAnalyser;
+  let isMicEnabled = false;
+  let micButton;
+  let micSelect;
+
+  async function setupAudio(deviceId = null) {
+    try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const constraints = {
+            audio: {
+                deviceId: deviceId ? { exact: deviceId } : undefined
+            }
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        audioSource = audioContext.createMediaStreamSource(stream);
+        audioAnalyser = audioContext.createAnalyser();
+        audioAnalyser.fftSize = 256;
+        audioSource.connect(audioAnalyser);
+        return stream;
+    } catch (err) {
+        console.error("Error accessing microphone:", err);
+        return null;
+    }
+  }
+
+  async function populateMicrophoneList() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioDevices = devices.filter(device => device.kind === 'audioinput');
+        
+        micSelect = document.getElementById('micSelect');
+        micSelect.innerHTML = ''; // Clear existing options
+        
+        audioDevices.forEach((device, index) => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            option.text = device.label || `Microphone ${index + 1}`;
+            micSelect.appendChild(option);
+        });
+
+        // Add change event listener
+        micSelect.addEventListener('change', async (event) => {
+            if (isMicEnabled) {
+                // If mic is enabled, switch to new device
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                    if (audioSource) audioSource.disconnect();
+                    if (audioAnalyser) audioAnalyser.disconnect();
+                }
+                audioStream = await setupAudio(event.target.value);
+                if (!audioStream) {
+                    isMicEnabled = false;
+                    micButton.textContent = 'Enable Microphone';
+                    uniforms.u_audioLevel.value = 0;
+                    audioLevelBar.style.width = '0%';
+                }
+            }
+        });
+    } catch (err) {
+        console.error("Error enumerating audio devices:", err);
+    }
+  }
+
+  let audioStream = null;
+  const audioLevelBar = document.getElementById('audioLevelBar');
+  micButton = document.getElementById('toggleMic');
+
+  // Call this after device enumeration
+  await populateMicrophoneList();
+
+  micButton.addEventListener('click', async () => {
+    if (!isMicEnabled) {
+        const selectedMicId = document.getElementById('micSelect').value;
+        audioStream = await setupAudio(selectedMicId);
+        if (audioStream) {
+            isMicEnabled = true;
+            micButton.textContent = 'Disable Microphone';
+        }
+    } else {
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+            if (audioSource) audioSource.disconnect();
+            if (audioAnalyser) audioAnalyser.disconnect();
+            audioStream = null;
+        }
+        isMicEnabled = false;
+        micButton.textContent = 'Enable Microphone';
+        uniforms.u_audioLevel.value = 0;
+        audioLevelBar.style.width = '0%';
+    }
+  });
+
+  function animate(t) {
+    requestAnimationFrame(animate);
+
+    const currentTime = t;
+    const deltaTime = currentTime - lastFrameTime;
+    frameCount++;
+
+    if (uniforms.u_time) {
+        uniforms.u_time.value = currentTime / 1000;
+    }
+
+    // Process audio if enabled
+    if (isMicEnabled && audioAnalyser) {
+        const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+        audioAnalyser.getByteFrequencyData(dataArray);
+        
+        // Calculate average volume
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        const normalizedValue = Math.min(average / 128, 1.0); // Normalize to 0-1
+        
+        // Smooth the transition
+        uniforms.u_audioLevel.value = uniforms.u_audioLevel.value * 0.8 + normalizedValue * 0.2;
+        
+        // Update visualization
+        audioLevelBar.style.width = `${uniforms.u_audioLevel.value * 100}%`;
+    }
+
+    if (currentTime > lastFpsUpdateTime + fpsUpdateInterval) {
+        const fps = Math.round((frameCount * 1000) / (currentTime - lastFpsUpdateTime));
+        fpsCounterElement.textContent = `FPS: ${fps}`;
+        lastFpsUpdateTime = currentTime;
+        frameCount = 0;
+    }
+
+    renderer.render(scene, camera);
+    lastFrameTime = currentTime;
+  }
+
+  // Add event listener for blend mode
+  document.getElementById('blendMode').addEventListener('change', function(e) {
+    uniforms.u_blendMode.value = parseInt(e.target.value);
+  });
+}
+
+init();
+
+</script>
+</body>
+</html>
